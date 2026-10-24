@@ -1,0 +1,722 @@
+[
+ {
+  "mode": "08_08",
+  "n_ch": 1,
+  "size": 512,
+  "sr": 8000,
+  "kbps_ch": 8,
+  "total_bits": 512,
+  "frame_ms": 64.0,
+  "compression": 16000.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 397,
+   "bark1": 40,
+   "bark_hist": 8,
+   "gain": 8,
+   "sub_gain": 40,
+   "ppc": 0,
+   "lsp": 15
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 453,
+   "bark1": 20,
+   "bark_hist": 2,
+   "gain": 8,
+   "sub_gain": 10,
+   "ppc": 0,
+   "lsp": 15
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 424,
+   "bark1": 18,
+   "bark_hist": 1,
+   "gain": 8,
+   "sub_gain": 0,
+   "ppc": 42,
+   "lsp": 15
+  }
+ },
+ {
+  "mode": "08_08",
+  "n_ch": 2,
+  "size": 512,
+  "sr": 8000,
+  "kbps_ch": 8,
+  "total_bits": 1024,
+  "frame_ms": 64.0,
+  "compression": 16000.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 798,
+   "bark1": 80,
+   "bark_hist": 16,
+   "gain": 16,
+   "sub_gain": 80,
+   "ppc": 0,
+   "lsp": 30
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 910,
+   "bark1": 40,
+   "bark_hist": 4,
+   "gain": 16,
+   "sub_gain": 20,
+   "ppc": 0,
+   "lsp": 30
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 852,
+   "bark1": 36,
+   "bark_hist": 2,
+   "gain": 16,
+   "sub_gain": 0,
+   "ppc": 84,
+   "lsp": 30
+  }
+ },
+ {
+  "mode": "11_08",
+  "n_ch": 1,
+  "size": 512,
+  "sr": 11025,
+  "kbps_ch": 8,
+  "total_bits": 371,
+  "frame_ms": 46.439909297052154,
+  "compression": 22050.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 252,
+   "bark1": 40,
+   "bark_hist": 8,
+   "gain": 8,
+   "sub_gain": 40,
+   "ppc": 0,
+   "lsp": 19
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 308,
+   "bark1": 20,
+   "bark_hist": 2,
+   "gain": 8,
+   "sub_gain": 10,
+   "ppc": 0,
+   "lsp": 19
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 269,
+   "bark1": 18,
+   "bark_hist": 1,
+   "gain": 8,
+   "sub_gain": 0,
+   "ppc": 52,
+   "lsp": 19
+  }
+ },
+ {
+  "mode": "11_08",
+  "n_ch": 2,
+  "size": 512,
+  "sr": 11025,
+  "kbps_ch": 8,
+  "total_bits": 743,
+  "frame_ms": 46.439909297052154,
+  "compression": 22050.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 509,
+   "bark1": 80,
+   "bark_hist": 16,
+   "gain": 16,
+   "sub_gain": 80,
+   "ppc": 0,
+   "lsp": 38
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 621,
+   "bark1": 40,
+   "bark_hist": 4,
+   "gain": 16,
+   "sub_gain": 20,
+   "ppc": 0,
+   "lsp": 38
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 543,
+   "bark1": 36,
+   "bark_hist": 2,
+   "gain": 16,
+   "sub_gain": 0,
+   "ppc": 104,
+   "lsp": 38
+  }
+ },
+ {
+  "mode": "11_10",
+  "n_ch": 1,
+  "size": 512,
+  "sr": 11025,
+  "kbps_ch": 10,
+  "total_bits": 464,
+  "frame_ms": 46.439909297052154,
+  "compression": 17640.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 345,
+   "bark1": 40,
+   "bark_hist": 8,
+   "gain": 8,
+   "sub_gain": 40,
+   "ppc": 0,
+   "lsp": 19
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 401,
+   "bark1": 20,
+   "bark_hist": 2,
+   "gain": 8,
+   "sub_gain": 10,
+   "ppc": 0,
+   "lsp": 19
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 362,
+   "bark1": 18,
+   "bark_hist": 1,
+   "gain": 8,
+   "sub_gain": 0,
+   "ppc": 52,
+   "lsp": 19
+  }
+ },
+ {
+  "mode": "11_10",
+  "n_ch": 2,
+  "size": 512,
+  "sr": 11025,
+  "kbps_ch": 10,
+  "total_bits": 928,
+  "frame_ms": 46.439909297052154,
+  "compression": 17640.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 694,
+   "bark1": 80,
+   "bark_hist": 16,
+   "gain": 16,
+   "sub_gain": 80,
+   "ppc": 0,
+   "lsp": 38
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 806,
+   "bark1": 40,
+   "bark_hist": 4,
+   "gain": 16,
+   "sub_gain": 20,
+   "ppc": 0,
+   "lsp": 38
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 728,
+   "bark1": 36,
+   "bark_hist": 2,
+   "gain": 16,
+   "sub_gain": 0,
+   "ppc": 104,
+   "lsp": 38
+  }
+ },
+ {
+  "mode": "16_16",
+  "n_ch": 1,
+  "size": 1024,
+  "sr": 16000,
+  "kbps_ch": 16,
+  "total_bits": 1024,
+  "frame_ms": 64.0,
+  "compression": 16000.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 905,
+   "bark1": 40,
+   "bark_hist": 8,
+   "gain": 8,
+   "sub_gain": 40,
+   "ppc": 0,
+   "lsp": 19
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 961,
+   "bark1": 20,
+   "bark_hist": 2,
+   "gain": 8,
+   "sub_gain": 10,
+   "ppc": 0,
+   "lsp": 19
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 902,
+   "bark1": 18,
+   "bark_hist": 1,
+   "gain": 8,
+   "sub_gain": 0,
+   "ppc": 72,
+   "lsp": 19
+  }
+ },
+ {
+  "mode": "16_16",
+  "n_ch": 2,
+  "size": 1024,
+  "sr": 16000,
+  "kbps_ch": 16,
+  "total_bits": 2048,
+  "frame_ms": 64.0,
+  "compression": 16000.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 1814,
+   "bark1": 80,
+   "bark_hist": 16,
+   "gain": 16,
+   "sub_gain": 80,
+   "ppc": 0,
+   "lsp": 38
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 1926,
+   "bark1": 40,
+   "bark_hist": 4,
+   "gain": 16,
+   "sub_gain": 20,
+   "ppc": 0,
+   "lsp": 38
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 1808,
+   "bark1": 36,
+   "bark_hist": 2,
+   "gain": 16,
+   "sub_gain": 0,
+   "ppc": 144,
+   "lsp": 38
+  }
+ },
+ {
+  "mode": "22_20",
+  "n_ch": 1,
+  "size": 1024,
+  "sr": 22050,
+  "kbps_ch": 20,
+  "total_bits": 928,
+  "frame_ms": 46.439909297052154,
+  "compression": 17640.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 801,
+   "bark1": 48,
+   "bark_hist": 8,
+   "gain": 8,
+   "sub_gain": 40,
+   "ppc": 0,
+   "lsp": 19
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 861,
+   "bark1": 24,
+   "bark_hist": 2,
+   "gain": 8,
+   "sub_gain": 10,
+   "ppc": 0,
+   "lsp": 19
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 800,
+   "bark1": 24,
+   "bark_hist": 1,
+   "gain": 8,
+   "sub_gain": 0,
+   "ppc": 72,
+   "lsp": 19
+  }
+ },
+ {
+  "mode": "22_20",
+  "n_ch": 2,
+  "size": 1024,
+  "sr": 22050,
+  "kbps_ch": 20,
+  "total_bits": 1857,
+  "frame_ms": 46.439909297052154,
+  "compression": 17640.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 1607,
+   "bark1": 96,
+   "bark_hist": 16,
+   "gain": 16,
+   "sub_gain": 80,
+   "ppc": 0,
+   "lsp": 38
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 1727,
+   "bark1": 48,
+   "bark_hist": 4,
+   "gain": 16,
+   "sub_gain": 20,
+   "ppc": 0,
+   "lsp": 38
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 1605,
+   "bark1": 48,
+   "bark_hist": 2,
+   "gain": 16,
+   "sub_gain": 0,
+   "ppc": 144,
+   "lsp": 38
+  }
+ },
+ {
+  "mode": "22_24",
+  "n_ch": 1,
+  "size": 1024,
+  "sr": 22050,
+  "kbps_ch": 24,
+  "total_bits": 1114,
+  "frame_ms": 46.439909297052154,
+  "compression": 14700.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 987,
+   "bark1": 48,
+   "bark_hist": 8,
+   "gain": 8,
+   "sub_gain": 40,
+   "ppc": 0,
+   "lsp": 19
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 1047,
+   "bark1": 24,
+   "bark_hist": 2,
+   "gain": 8,
+   "sub_gain": 10,
+   "ppc": 0,
+   "lsp": 19
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 986,
+   "bark1": 24,
+   "bark_hist": 1,
+   "gain": 8,
+   "sub_gain": 0,
+   "ppc": 72,
+   "lsp": 19
+  }
+ },
+ {
+  "mode": "22_24",
+  "n_ch": 2,
+  "size": 1024,
+  "sr": 22050,
+  "kbps_ch": 24,
+  "total_bits": 2229,
+  "frame_ms": 46.439909297052154,
+  "compression": 14700.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 1979,
+   "bark1": 96,
+   "bark_hist": 16,
+   "gain": 16,
+   "sub_gain": 80,
+   "ppc": 0,
+   "lsp": 38
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 2099,
+   "bark1": 48,
+   "bark_hist": 4,
+   "gain": 16,
+   "sub_gain": 20,
+   "ppc": 0,
+   "lsp": 38
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 1977,
+   "bark1": 48,
+   "bark_hist": 2,
+   "gain": 16,
+   "sub_gain": 0,
+   "ppc": 144,
+   "lsp": 38
+  }
+ },
+ {
+  "mode": "22_32",
+  "n_ch": 1,
+  "size": 512,
+  "sr": 22050,
+  "kbps_ch": 32,
+  "total_bits": 743,
+  "frame_ms": 23.219954648526077,
+  "compression": 11025.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 660,
+   "bark1": 24,
+   "bark_hist": 4,
+   "gain": 8,
+   "sub_gain": 20,
+   "ppc": 0,
+   "lsp": 23
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 672,
+   "bark1": 24,
+   "bark_hist": 2,
+   "gain": 8,
+   "sub_gain": 10,
+   "ppc": 0,
+   "lsp": 23
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 611,
+   "bark1": 24,
+   "bark_hist": 1,
+   "gain": 8,
+   "sub_gain": 0,
+   "ppc": 72,
+   "lsp": 23
+  }
+ },
+ {
+  "mode": "22_32",
+  "n_ch": 2,
+  "size": 512,
+  "sr": 22050,
+  "kbps_ch": 32,
+  "total_bits": 1486,
+  "frame_ms": 23.219954648526077,
+  "compression": 11025.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 1324,
+   "bark1": 48,
+   "bark_hist": 8,
+   "gain": 16,
+   "sub_gain": 40,
+   "ppc": 0,
+   "lsp": 46
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 1348,
+   "bark1": 48,
+   "bark_hist": 4,
+   "gain": 16,
+   "sub_gain": 20,
+   "ppc": 0,
+   "lsp": 46
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 1226,
+   "bark1": 48,
+   "bark_hist": 2,
+   "gain": 16,
+   "sub_gain": 0,
+   "ppc": 144,
+   "lsp": 46
+  }
+ },
+ {
+  "mode": "44_40",
+  "n_ch": 1,
+  "size": 2048,
+  "sr": 44100,
+  "kbps_ch": 40,
+  "total_bits": 1857,
+  "frame_ms": 46.439909297052154,
+  "compression": 17640.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 1630,
+   "bark1": 96,
+   "bark_hist": 16,
+   "gain": 8,
+   "sub_gain": 80,
+   "ppc": 0,
+   "lsp": 23
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 1750,
+   "bark1": 48,
+   "bark_hist": 4,
+   "gain": 8,
+   "sub_gain": 20,
+   "ppc": 0,
+   "lsp": 23
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 1697,
+   "bark1": 24,
+   "bark_hist": 1,
+   "gain": 8,
+   "sub_gain": 0,
+   "ppc": 100,
+   "lsp": 23
+  }
+ },
+ {
+  "mode": "44_40",
+  "n_ch": 2,
+  "size": 2048,
+  "sr": 44100,
+  "kbps_ch": 40,
+  "total_bits": 3715,
+  "frame_ms": 46.439909297052154,
+  "compression": 17640.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 3265,
+   "bark1": 192,
+   "bark_hist": 32,
+   "gain": 16,
+   "sub_gain": 160,
+   "ppc": 0,
+   "lsp": 46
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 3505,
+   "bark1": 96,
+   "bark_hist": 8,
+   "gain": 16,
+   "sub_gain": 40,
+   "ppc": 0,
+   "lsp": 46
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 3399,
+   "bark1": 48,
+   "bark_hist": 2,
+   "gain": 16,
+   "sub_gain": 0,
+   "ppc": 200,
+   "lsp": 46
+  }
+ },
+ {
+  "mode": "44_48",
+  "n_ch": 1,
+  "size": 2048,
+  "sr": 44100,
+  "kbps_ch": 48,
+  "total_bits": 2229,
+  "frame_ms": 46.439909297052154,
+  "compression": 14700.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 2002,
+   "bark1": 96,
+   "bark_hist": 16,
+   "gain": 8,
+   "sub_gain": 80,
+   "ppc": 0,
+   "lsp": 23
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 2122,
+   "bark1": 48,
+   "bark_hist": 4,
+   "gain": 8,
+   "sub_gain": 20,
+   "ppc": 0,
+   "lsp": 23
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 2069,
+   "bark1": 24,
+   "bark_hist": 1,
+   "gain": 8,
+   "sub_gain": 0,
+   "ppc": 100,
+   "lsp": 23
+  }
+ },
+ {
+  "mode": "44_48",
+  "n_ch": 2,
+  "size": 2048,
+  "sr": 44100,
+  "kbps_ch": 48,
+  "total_bits": 4458,
+  "frame_ms": 46.439909297052154,
+  "compression": 14700.0,
+  "SHORT": {
+   "wtype": 4,
+   "main_vq": 4008,
+   "bark1": 192,
+   "bark_hist": 32,
+   "gain": 16,
+   "sub_gain": 160,
+   "ppc": 0,
+   "lsp": 46
+  },
+  "MEDIUM": {
+   "wtype": 4,
+   "main_vq": 4248,
+   "bark1": 96,
+   "bark_hist": 8,
+   "gain": 16,
+   "sub_gain": 40,
+   "ppc": 0,
+   "lsp": 46
+  },
+  "LONG": {
+   "wtype": 4,
+   "main_vq": 4142,
+   "bark1": 48,
+   "bark_hist": 2,
+   "gain": 16,
+   "sub_gain": 0,
+   "ppc": 200,
+   "lsp": 46
+  }
+ }
+]

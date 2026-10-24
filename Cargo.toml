@@ -1,0 +1,20 @@
+[package]
+name = "tequila"
+version = "0.1.0"
+edition = "2021"
+description = "Cleanroom TwinVQ (VQF) encoder — bitstream-compatible with FFmpeg"
+license = "MIT AND LGPL-2.1-or-later"
+
+# Собственный код — MIT. Vendored-данные кодбуков (src/vendor/generated/,
+# генерируются из FFmpeg tools/gen_vendor_rs.py) — LGPL-2.1-or-later;
+# комбинация наследует LGPL для связанных частей (см. LICENSE и README).
+
+[dependencies]
+# rustfft — только математика FFT (MIT OR Apache-2.0), кодек-логики не
+# содержит: чистая комната не затрагивается. SIMD-пути внутри крейта.
+rustfft = "6.4.1"
+
+[profile.release]
+# максимум оптимизации для числодробилки энкодера
+lto = "fat"
+codegen-units = 1
