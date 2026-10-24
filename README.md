@@ -97,7 +97,7 @@ ffprobe -show_format song.vqf   # title/comment/author/copyright видны FFmp
 ```
 
 Зависимости: rustc/cargo (edition 2021); из внешних крейтов — только
-`rustfft` (чистая математика FFT, MIT OR Apache-2.0, кодек-логики не
+`rustfft` (чистая математика FFT, WTFPL, кодек-логики не
 содержит — чистая комната не затрагивается).
 Для регенерации vendored-данных — python3; для верификации — ffmpeg/ffprobe
 + numpy (`python/reference/` — бит-точный оракул, corr = 1.0 против ffmpeg;
@@ -105,7 +105,7 @@ ffprobe -show_format song.vqf   # title/comment/author/copyright видны FFmp
 
 ## Лицензия и правовой статус
 
-- Собственный код проекта — MIT (см. LICENSE).
+- Собственный код проекта — WTFPL.
 - Таблицы данных (кодбуки VQ, параметры режимов) портированы из
   **FFmpeg** (`libavcodec/twinvqdata.h`, `twinvq.c`) — LGPL-2.1-or-later;
   см. `third_party/ffmpeg/` и уведомления в файлах. Комбинация с этими
@@ -141,3 +141,4 @@ python/analysis/ инструменты эмпирического анализ�
 third_party/     эталонные исходники FFmpeg (только для чтения/сверки)
 signals/         тестовый корпус WAV (генерируется скриптом)
 ```
+
