@@ -65,12 +65,21 @@ LPC/LSP/bark/PPC/VQ-квантователи, мультиплексор, CLI, �
 
 ```bash
 tequila encode in.wav out.vqf [--mode 44_48] [--no-ppc] [--kappa 1.0]
+                [--psy [--psy-beta F] [--psy-bark-beta F] [--psy-pre-mask F] …]
                 [--title S] [--author S] [--comment S] [--copyright S]
                 [--genre S] … (18 тегов) [--tag CHUNK=S]
 tequila decode in.vqf out.wav
 tequila info in.vqf
 tequila bench [in.wav] [--mode 44_48]   # 3 прогона, RT-фактор
 ```
+
+`--psy` — психоакустическая модель (docs/PSY.md): маскировка (spreading +
+тональность + ATH + pre/post-masking) переставляет ошибку квантования в
+неслышимые области при неизменном CBR-бюджете, адаптивный κ выравнивает
+сладкую зону кодбуков по слышимой части остатка. Корпусная валидация
+(python/analysis/psy_eval.py, PEAQ ODG через EAQUAL): seg-SNR +4.2 дБ,
+доля слышимых over-mask бинов ×0.45, PEAQ ODG −3.34→−3.24. Битстрим-формат
+и совместимость с FFmpeg не меняются.
 
 Производительность (R14): MDCT/IMDCT — O(B·log B) через rustfft (FFT 4B,
 SIMD внутри крейта), VQ-поиск — кэш кросс-матриц кодбуков + отсев строк,
@@ -97,7 +106,7 @@ ffprobe -show_format song.vqf   # title/comment/author/copyright видны FFmp
 ```
 
 Зависимости: rustc/cargo (edition 2021); из внешних крейтов — только
-`rustfft` (чистая математика FFT, WTFPL, кодек-логики не
+`rustfft` (чистая математика FFT, MIT OR Apache-2.0, кодек-логики не
 содержит — чистая комната не затрагивается).
 Для регенерации vendored-данных — python3; для верификации — ffmpeg/ffprobe
 + numpy (`python/reference/` — бит-точный оракул, corr = 1.0 против ffmpeg;
@@ -105,7 +114,7 @@ ffprobe -show_format song.vqf   # title/comment/author/copyright видны FFmp
 
 ## Лицензия и правовой статус
 
-- Собственный код проекта — WTFPL.
+- Собственный код проекта — MIT (см. LICENSE).
 - Таблицы данных (кодбуки VQ, параметры режимов) портированы из
   **FFmpeg** (`libavcodec/twinvqdata.h`, `twinvq.c`) — LGPL-2.1-or-later;
   см. `third_party/ffmpeg/` и уведомления в файлах. Комбинация с этими
@@ -117,7 +126,8 @@ ffprobe -show_format song.vqf   # title/comment/author/copyright видны FFmp
 
 ```
 docs/            документация: ARCHITECTURE (спецификация), ENCODE_PIPELINE
-                 (модель энкодера NTT), PATENTS, PROGRESS (журнал шагов)
+                 (модель энкодера NTT), PSY (психоакустика --psy),
+                 PATENTS, PROGRESS (журнал шагов)
 src/             Rust-реализация (cleanroom)
   bitstream.rs    побитовый I/O MSB-first (кадры вплотную, битовый уровень)
   modes.rs        FrameType, find_mode, wtype-маппинги
@@ -128,6 +138,8 @@ src/             Rust-реализация (cleanroom)
   dsp.rs          перестановки, окна, forward/compact MDCT
   decode.rs       точный порт тракта декодера (VQ/bark/PPC/LSP/TDAC)
   analysis.rs     LPC-анализ: автокорреляция, Левинсон, LSP-корни
+  psycho.rs       психоакустическая модель (--psy): маскировка, ATH,
+                  post-masking; перцептивные веса VQ/bark (docs/PSY.md)
   quantize.rs     LSP split-VQ+MA, bark, gain mulaw, VQ, PPC-гриды
   encoder.rs      конвейер кадра: мишень MDCT → слои → мультиплексор
   wav.rs          минималистичный WAV-ридер/райтер
@@ -137,8 +149,9 @@ src/             Rust-реализация (cleanroom)
  tools/           gen_vendor_rs.py — генератор vendored-данных из FFmpeg
 python/reference/ бит-точный python-декодер-оракул (corr=1.0 vs ffmpeg)
 python/analysis/ инструменты эмпирического анализа формата (E0–E7,
-                 массовая статистика 218 эталонов, битовый бюджет)
-third_party/     эталонные исходники FFmpeg (только для чтения/сверки)
+                 массовая статистика 218 эталонов, битовый бюджет,
+                 psy_eval.py — корпусная оценка режима --psy)
+third_party/     эталонные исходники FFmpeg (сверка) + eaqual/ (PEAQ-Basic,
+                 внешняя валидация --psy, см. eaqual/BUILD.md)
 signals/         тестовый корпус WAV (генерируется скриптом)
 ```
-

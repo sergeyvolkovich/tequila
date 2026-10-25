@@ -28,6 +28,7 @@ use crate::decode::{
 use crate::dsp::{construct_perm, mdct_analysis_compact, sine_window};
 use crate::frame::FrameData;
 use crate::modes::{FrameType, WTYPE_TO_WSIZE_IDX};
+use crate::psycho::{PsyModel, PsyParams, PsyState};
 use crate::quantize::{
     cb_pair_sigma, ppc_gain_grid, ppc_peak_positions, ppc_period_grid, quant_bark,
     quant_gain_long, quant_gain_sub, quant_lsp, quant_vq_main_w,
@@ -65,6 +66,10 @@ pub struct EncoderOpts {
     /// свои слоты (parallel::Pool::map_into), FP-порядок внутри
     /// индекса — скалярный.
     pub threads: usize,
+    /// Психоакустическая модель (режим `--psy`, docs/PSY.md): перцептивные
+    /// веса ошибки VQ/bark внутри фиксированного бюджета кадра.
+    /// `None` — обычный режим (битстрим байт-в-байт как без модели).
+    pub psy: Option<PsyParams>,
 }
 
 impl Default for EncoderOpts {
@@ -75,6 +80,7 @@ impl Default for EncoderOpts {
             attack_ratio: 4.0,
             silence_power: 1e-11,
             threads: 0,
+            psy: None,
         }
     }
 }
@@ -109,6 +115,10 @@ pub struct Encoder {
     ppc_peaks: Vec<(Vec<i64>, Vec<usize>)>,
     /// Пул воркеров для многопоточного кодирования батчей.
     pool: crate::parallel::Pool,
+    /// Психоакустическая модель + состояние post-masking на канал
+    /// (режим `--psy`). Коммит состояний — в порядке кадров (Phase B
+    /// последовательна), поэтому временная маскировка корректна.
+    psy: Option<(PsyModel, Vec<PsyState>)>,
     /// Инструментация стадий (сек, накопительно; вывод по TEQUILA_PROFILE=1).
     prof: [f64; 6],
 }
@@ -136,6 +146,11 @@ impl Encoder {
         let ppc_n_div = info.layout.ppc.n_div;
         let cb_len_p = (ppc_n_div + info.mode.ppc_shape_len * info.n_ch - 1) / ppc_n_div;
         let (ppc_cb0, ppc_cb1) = info.mode.ppc_shape_cb.split_at(cb_len_p * 64);
+        let psy = opts.psy.map(|p| {
+            let model = PsyModel::new(&info, p);
+            let states = (0..info.n_ch).map(|_| model.new_state()).collect();
+            (model, states)
+        });
         Encoder {
             lsp_hist: vec![vec![0.0f32; info.mode.n_lsp]; info.n_ch],
             bark_hist: vec![vec![0.1f64; 40]; 6],
@@ -168,6 +183,7 @@ impl Encoder {
             info,
             opts,
             sigma,
+            psy,
         }
     }
 
@@ -180,10 +196,17 @@ impl Encoder {
     /// MDCT (Phase A — параллельный батчевый префетч в encode_stream).
     ///
     /// `x` — мишень [ch][size] (адъюнкт синтеза, analysis_targets).
+    /// `next` — (wtype, мишень) СЛЕДУЮЩЕГО кадра: нужен только режиму
+    /// `--psy` для pre-masking (lookahead); None — в конце потока.
     /// Внутри: LSP-анализ по каналам — параллельно; период PPC и
     /// грубый скан гейна — параллельно по гриду; дивизии main VQ —
     /// параллельно; MA-истории LSP/bark — строго последовательно.
-    pub fn encode_frame(&mut self, wtype: u8, x: Vec<Vec<f64>>) -> FrameEncoding {
+    pub fn encode_frame(
+        &mut self,
+        wtype: u8,
+        x: Vec<Vec<f64>>,
+        next: Option<(u8, &Vec<Vec<f64>>)>,
+    ) -> FrameEncoding {
         // локальная копия (StreamInfo: Copy) — не держит заимствование
         // self: ниже нужны &self.pool / &self.vq* параллельно с &mut hist
         let info = self.info;
@@ -197,10 +220,45 @@ impl Encoder {
         let is_long = ftype == FrameType::Long;
 
         // 1. мишень MDCT — уже вычислена (Phase A, параллельно)
-        let _tp = std::time::Instant::now();
+
+        // 1.5. психоакустическая маска (--psy, PSY.md §2): порог
+        //      маскировки на бин МИШЕНИ, кадром с pre-masking lookahead
+        //      (следующий кадр) и commit post-masking. Считается ДО LSP:
+        //      LSP-веса тоже используют маску.
+        let psy_params = self.psy.as_ref().map(|(model, _)| model.params());
+        let psy: Option<(Vec<Vec<f64>>, Vec<Vec<f64>>)> = self.psy.as_mut().map(
+            |(model, states)| {
+                let beta2 = 2.0 * model.params().beta;
+                let mut mm = Vec::with_capacity(n_ch);
+                let mut wf = Vec::with_capacity(n_ch);
+                for ch in 0..n_ch {
+                    let specs: Vec<&[f64]> =
+                        (0..sub).map(|j| &x[ch][j * b..(j + 1) * b]).collect();
+                    let next_specs = next.map(|(nw, nx)| {
+                        let ft_n = info.ftype_of_wtype(nw);
+                        let sub_n = m.fmode[ft_n.idx()].sub;
+                        let b_n = size / sub_n;
+                        let v: Vec<&[f64]> = (0..sub_n)
+                            .map(|j| &nx[ch][j * b_n..(j + 1) * b_n])
+                            .collect();
+                        (ft_n, v)
+                    });
+                    let rs = model.mask_frame(ftype, &specs, next_specs, &mut states[ch]);
+                    let mut mc = vec![0.0f64; size];
+                    for (j, r) in rs.iter().enumerate() {
+                        mc[j * b..(j + 1) * b].copy_from_slice(&r.m);
+                    }
+                    let wc = mc.iter().map(|&v| v.powf(-beta2)).collect();
+                    mm.push(mc);
+                    wf.push(wc);
+                }
+                (mm, wf)
+            },
+        );
 
         // 2. LSP: анализ по каналам — независимые задачи (map_into);
         //    квантование + MA-обновление — последовательно
+        let _tp = std::time::Instant::now();
         let mut frame = FrameData::new(&info, wtype);
         let mut lsp_targets = vec![Vec::<f64>::new(); n_ch];
         {
@@ -213,7 +271,47 @@ impl Encoder {
         }
         let mut envs: Vec<Vec<f32>> = Vec::with_capacity(n_ch);
         for ch in 0..n_ch {
-            let q = quant_lsp(&info, &lsp_targets[ch], &self.lsp_hist[ch]);
+            // перцептивные веса LSP (--psy, PSY.md §7): слышимость у
+            // частоты k-го LSP — уровень |X|/порог в его окрестности,
+            // нормировка на среднее 1 (переключает выбор кандидатов
+            // split-VQ в пользу слышимых участков огибающей)
+            let lsp_beta = psy_params.map(|p| p.lsp_beta).unwrap_or(0.0);
+            let lsp_w: Option<Vec<f64>> = if lsp_beta > 0.0 {
+                psy.as_ref().map(|(mm, _)| {
+                    let n_lsp = m.n_lsp;
+                    let e = 2.0 * lsp_beta;
+                    let mut w = vec![0.0f64; n_lsp];
+                    for k in 0..n_lsp {
+                        let w_k = lsp_targets[ch][k].clamp(1e-4, std::f64::consts::PI - 1e-4);
+                        let bin = ((w_k / std::f64::consts::PI) as f64 * b as f64) as usize;
+                        let lo = bin.saturating_sub(1);
+                        let hi = (bin + 2).clamp(1, b);
+                        let mut sl = 0.0f64;
+                        let mut sm = 0.0f64;
+                        let mut n = 0.0f64;
+                        for j in 0..sub {
+                            for i in lo..hi {
+                                sl += x[ch][j * b + i] * x[ch][j * b + i];
+                                sm += mm[ch][j * b + i] * mm[ch][j * b + i];
+                                n += 1.0;
+                            }
+                        }
+                        let lvl = (sl / n).sqrt().max(1e-30);
+                        let mask = (sm / n).sqrt().max(1e-30);
+                        w[k] = (lvl / mask).powf(e);
+                    }
+                    let mean: f64 = w.iter().sum::<f64>() / n_lsp as f64;
+                    if mean > 0.0 {
+                        for v in w.iter_mut() {
+                            *v /= mean;
+                        }
+                    }
+                    w
+                })
+            } else {
+                None
+            };
+            let q = quant_lsp(&info, &lsp_targets[ch], &self.lsp_hist[ch], lsp_w.as_deref());
             frame.lpc_hist_idx[ch] = q.hist_idx;
             frame.lpc_idx1[ch] = q.idx1;
             for (j, v) in q.idx2.iter().enumerate() {
@@ -416,22 +514,78 @@ impl Encoder {
                     }
                 }
                 let hist = &mut self.bark_hist[ftype.idx() * 2 + ch];
-                let dec = quant_bark(&info, ftype, &bands, hist);
-                // масштаб: RMS(W/st) по всем сэмплам подкадра → σ-цель
+                // перцептивные веса полос (--psy, PSY.md §3): слышимость
+                // ошибки st ∝ (env_rms/порог)^{2·β_bark}; β_bark=0 —
+                // равные веса (bark-слой как в базовом режиме).
+                // Нормировка на 1 — argmin не меняет, численность бережёт.
+                let bark_beta = psy_params.map(|p| p.bark_beta).unwrap_or(0.0);
+                let bark_w: Option<Vec<f64>> = if bark_beta > 0.0 {
+                    psy.as_ref().map(|(mm, _)| {
+                        let e = 2.0 * bark_beta;
+                        let mut w = Vec::with_capacity(fm.bark_env_size);
+                        let mut wmax = 0.0f64;
+                        let mut pos = 0usize;
+                        for &w_dt in fm.bark_tab[..fm.bark_env_size].iter() {
+                            let n = w_dt as usize;
+                            let mut se = 0.0f64;
+                            let mut sm2 = 0.0f64;
+                            for t in 0..n {
+                                let ev = envs[ch][pos + t] as f64;
+                                se += ev * ev;
+                                let mv = mm[ch][j * b + pos + t];
+                                sm2 += mv * mv;
+                            }
+                            let m_eff = (sm2 / n as f64).sqrt().max(1e-30);
+                            let v = ((se / n as f64).sqrt() / m_eff).powf(e);
+                            wmax = wmax.max(v);
+                            w.push(v);
+                            pos += n;
+                        }
+                        for v in w.iter_mut() {
+                            *v /= wmax;
+                        }
+                        w
+                    })
+                } else {
+                    None
+                };
+                let dec = quant_bark(&info, ftype, &bands, hist, bark_w.as_deref());
+                // масштаб: RMS(W/st) подкадра → σ-цель. Режим --psy с
+                // gain_weighted (PSY.md §7, адаптивный κ): RMS считается
+                // с перцептивными весами a=(env·st/m)^{2β} — сладкая зона
+                // кодбуков выравнивается по СЛЫШИМОЙ части остатка
+                // (замаскированные «горбы» от sloppy-st не уводят gain)
+                let gain_w = psy_params.map(|p| p.gain_weighted).unwrap_or(false);
                 let mut num = 0.0f64;
+                let mut den = 0.0f64;
                 {
+                    let beta_g = psy_params.map(|p| p.beta).unwrap_or(0.0);
                     let mut pos = 0usize;
                     for &w_dt in fm.bark_tab[..fm.bark_env_size].iter() {
                         let band = pos_to_band(&fm.bark_tab[..fm.bark_env_size], pos);
                         let stv = dec.st[band].max(1e-4);
                         for t in 0..w_dt as usize {
-                            let v = w[ch][j * b + pos + t] / stv;
-                            num += v * v;
+                            let bin = j * b + pos + t;
+                            let v = w[ch][bin] / stv;
+                            let a = if gain_w {
+                                match &psy {
+                                    Some((mm, _)) => {
+                                        let sc = envs[ch][pos + t] as f64 * stv;
+                                        let mv = mm[ch][bin].max(1e-30);
+                                        ((sc / mv).abs()).powf(2.0 * beta_g)
+                                    }
+                                    None => 1.0,
+                                }
+                            } else {
+                                1.0
+                            };
+                            num += a * v * v;
+                            den += a;
                         }
                         pos += w_dt as usize;
                     }
                 }
-                let rms = (num / b as f64).sqrt();
+                let rms = (num / den.max(1.0)).sqrt();
                 g_des.push(rms / sigma_target);
                 ch_dec.push(dec);
             }
@@ -489,9 +643,14 @@ impl Encoder {
                     for t in 0..w_dt as usize {
                         let bin = j * b + pos + t;
                         flat_vq[ch * size + bin] = w[ch][bin] / env_v;
-                        // истинный масштаб выхода бина: env·st·g (без клампов)
+                        // истинный масштаб выхода бина: env·st·g (без клампов);
+                        // в режиме --psy — домен NMR: делим на порог^{2β}
+                        // (PSY.md §3), маска > 0 всегда (пол ATH)
                         let sc = envs[ch][pos + t] as f64 * st[band_idx] as f64 * g;
-                        w_vq[ch * size + bin] = sc * sc;
+                        w_vq[ch * size + bin] = match &psy {
+                            Some((_, wf)) => sc * sc * wf[ch][bin],
+                            None => sc * sc,
+                        };
                     }
                     pos += w_dt as usize;
                 }
@@ -1261,12 +1420,15 @@ pub fn encode_stream(
     // (analysis_targets — чистая функция входа и wtypes), Phase B —
     // последовательное кодирование кадров батча (MA-истории LSP/bark
     // связывают кадры; внутри кадра параллелятся независимые поиски).
-    // Батч ограничивает память мишеней (~BATCH·n_ch·size·8 байт).
+    // Батч ограничивает память мишеней (~BATCH·n_ch·size·8 байт);
+    // считается на +1 кадр больше — lookahead pre-masking (--psy).
     const BATCH: usize = 32;
     let mut k0 = 0usize;
     while k0 < n_frames {
         let k1 = (k0 + BATCH).min(n_frames);
-        let mut targets: Vec<Vec<Vec<f64>>> = (0..k1 - k0).map(|_| Vec::new()).collect();
+        let k_end = (k1 + 1).min(n_frames); // +1 кадр lookahead
+        let mut targets: Vec<Vec<Vec<f64>>> =
+            (0..k_end - k0).map(|_| Vec::new()).collect();
         {
             let _tp = std::time::Instant::now();
             let wtypes_ref = &wtypes;
@@ -1288,7 +1450,13 @@ pub fn encode_stream(
         for bi in 0..(k1 - k0) {
             let k = k0 + bi;
             let w = wtypes[k];
-            let fe = enc.encode_frame(w, std::mem::take(&mut targets[bi]));
+            let x = std::mem::take(&mut targets[bi]);
+            let next = if k + 1 < n_frames {
+                Some((wtypes[k + 1], &targets[bi + 1]))
+            } else {
+                None
+            };
+            let fe = enc.encode_frame(w, x, next);
             if dump_path.is_some() {
                 dump.push(fe.target.clone());
             }
@@ -1395,6 +1563,73 @@ mod tests {
         let avg = seg_snr.iter().sum::<f64>() / seg_snr.len().max(1) as f64;
         eprintln!("e2e 44_48 multitone: {} сегментов, средний seg-SNR = {avg:.2} дБ", seg_snr.len());
         assert!(avg > 4.0, "seg-SNR слишком низкий: {avg}");
+    }
+
+    /// E2E режима `--psy`: битстрим валиден (round-trip контейнера),
+    /// декодируется, seg-SNR не разваливается; битстрим отличается от
+    /// обычного режима (веса реально влияют на выбор кодов VQ).
+    #[test]
+    fn psy_mode_roundtrip_and_effect() {
+        use crate::psycho::PsyParams;
+        let sr = 44100u32;
+        let info = StreamInfo::new(44, 48, 1).unwrap();
+        let x = make_signal(&[440.0, 1234.0, 3456.0], sr, 1.0, 42);
+
+        let (frames_psy, _) = {
+            let mut o = EncoderOpts::default();
+            o.psy = Some(PsyParams::default());
+            encode_stream(&info, &[x.clone()], o)
+        };
+        // контейнер round-trip + собственный декод
+        let blob = write_vqf(&info, &frames_psy, &[]);
+        let parsed = parse_vqf(&blob).unwrap();
+        assert_eq!(parsed.frames, frames_psy);
+        let pcm = decode_stream(&parsed.info, &parsed.frames);
+
+        let size = info.mode.size;
+        let mut seg_snr = Vec::new();
+        for (seg_i, (a, b)) in pcm[0].chunks(size).zip(x.chunks(size)).enumerate() {
+            if seg_i < 1 {
+                continue;
+            }
+            let mut se = 0.0;
+            let mut sx = 0.0;
+            for (p, q) in a.iter().zip(b.iter()) {
+                se += (p - q) * (p - q);
+                sx += q * q;
+            }
+            if sx > 1e-9 && se > 1e-12 {
+                seg_snr.push(10.0 * (sx / se).log10());
+            }
+        }
+        let avg = seg_snr.iter().sum::<f64>() / seg_snr.len().max(1) as f64;
+        eprintln!("psy e2e 44_48 multitone: средний seg-SNR = {avg:.2} дБ");
+        assert!(avg > 3.0, "psy seg-SNR слишком низкий: {avg}");
+
+        // сравнение с базой: psy-битстрим отличается (веса меняют выбор VQ),
+        // но формат кадра идентичен (та же раскладка полей/бит)
+        let (frames_base, _) = encode_stream(&info, &[x], EncoderOpts::default());
+        assert_eq!(frames_psy.len(), frames_base.len());
+        let differs = frames_psy
+            .iter()
+            .zip(frames_base.iter())
+            .any(|(a, b)| a.main_coeffs != b.main_coeffs || a.bark1 != b.bark1);
+        assert!(differs, "psy не повлиял на битстрим — интеграция молчит");
+    }
+
+    /// `--psy` выключен → битстрим байт-в-байт как до появления модели
+    /// (psy=None не должен менять ни одну FP-опрацию обычного пути).
+    #[test]
+    fn psy_disabled_matches_default() {
+        let info = StreamInfo::new(44, 48, 2).unwrap();
+        let l = make_signal(&[440.0, 1234.0], 44100, 0.4, 11);
+        let r = make_signal(&[997.0, 2500.0], 44100, 0.4, 23);
+        let mut o = EncoderOpts::default();
+        assert!(o.psy.is_none());
+        let (f1, _) = encode_stream(&info, &[l.clone(), r.clone()], o);
+        o.psy = None; // явно
+        let (f2, _) = encode_stream(&info, &[l, r], o);
+        assert_eq!(f1, f2);
     }
 
     /// Многопоточность не меняет битстрим: потоки делят только

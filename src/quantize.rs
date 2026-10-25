@@ -120,10 +120,14 @@ pub struct LspIndices {
 /// Поиск: для каждого hist_idx (lsp_bit0) и idx1 (lsp_bit1) — независимый
 /// перебор idx2 по сплитам (чанки коэффициентов не пересекаются), цель
 /// сдвигается через MA-вектор cb3: target' = (target − ma·hist)/(1 − ma).
+///
+/// `weights` — перцептивные веса коэффициентов (режим `--psy`, PSY.md §7):
+/// слышимость у частоты k-го LSP; None — равные веса (как базовый режим).
 pub fn quant_lsp(
     info: &StreamInfo,
     target: &[f64],
     hist: &[f32],
+    weights: Option<&[f64]>,
 ) -> LspIndices {
     let m = info.mode;
     let n = m.n_lsp;
@@ -176,7 +180,8 @@ pub fn quant_lsp(
                     let mut e = 0.0;
                     for k in lo..hi {
                         let d = (base[k] as f64 + cb2[k] as f64) - shifted[k];
-                        e += d * d;
+                        let wk = weights.map_or(1.0, |w| w[k]);
+                        e += wk * d * d;
                     }
                     if e < b_err {
                         b_err = e;
@@ -230,11 +235,16 @@ pub struct BarkDecision {
 /// `bands` — целевые уровни по bark-полосам (RMS |W| в полосе, длина
 /// bark_env_size); полосы независимы по чётности j (каждый индекс in[j]
 /// управляет полосами своей чётности), масштаб μ итеративно уточняется.
+///
+/// `weights` — перцептивные веса полос (режим `--psy`, PSY.md §3):
+/// ошибка st в полосе взвешивается слышимостью `(env_rms/m_rms)²`;
+/// `None` — равные веса (обычный режим, битстрим не меняется).
 pub fn quant_bark(
     info: &StreamInfo,
     ftype: FrameType,
     bands: &[f64],
     hist: &mut [f64],
+    weights: Option<&[f64]>,
 ) -> BarkDecision {
     let fm = &info.mode.fmode[ftype.idx()];
     let ncoef = fm.bark_n_coef;
@@ -285,7 +295,8 @@ pub fn quant_bark(
                             st_of(cand as u8, i) + 1.0
                         };
                         let d = st * mu - bands[idx];
-                        e += d * d;
+                        let w = weights.map_or(1.0, |w| w[idx]);
+                        e += w * d * d;
                         idx += ncoef;
                     }
                     if e < b_err {
@@ -304,7 +315,7 @@ pub fn quant_bark(
         }
         indices = best_indices;
         use_hist = best_hist;
-        // пересчёт μ (МНК по st·μ ≈ bands)
+        // пересчёт μ (взвешенный МНК по st·μ ≈ bands)
         let mut num = 0.0;
         let mut den = 0.0;
         let mut idx = 0usize;
@@ -315,8 +326,9 @@ pub fn quant_bark(
                 } else {
                     st_of(indices[j], i) + 1.0
                 };
-                num += bands[idx] * st;
-                den += st * st;
+                let w = weights.map_or(1.0, |w| w[idx]);
+                num += w * bands[idx] * st;
+                den += w * st * st;
                 idx += 1;
             }
         }
@@ -985,7 +997,7 @@ mod tests {
         let mut last_err = f64::INFINITY;
         let mut last_dev = f64::INFINITY;
         for _step in 0..6 {
-            let q = quant_lsp(info, &target, &hist);
+            let q = quant_lsp(info, &target, &hist, None);
             let mut fr = FrameData::new(info, 0);
             fr.lpc_hist_idx[0] = q.hist_idx;
             fr.lpc_idx1[0] = q.idx1;
@@ -1027,7 +1039,7 @@ mod tests {
         };
         let bands: Vec<f64> = (0..fm.bark_env_size).map(|_| next()).collect();
         let mut hist = vec![0.1f64; 40];
-        let d = quant_bark(info, ftype, &bands, &mut hist);
+        let d = quant_bark(info, ftype, &bands, &mut hist, None);
         assert_eq!(d.st.len(), fm.bark_env_size);
 
         // прогон через декодер с use_hist: st должны совпасть

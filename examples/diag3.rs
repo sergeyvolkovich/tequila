@@ -16,7 +16,7 @@ fn run(forced: u8, click_at: usize, n: usize) -> (usize, f64) {
     for k in 0..n_frames {
         let w = if k < 3 { [1u8, 2, 3][k] } else { forced };
         let x = analysis_targets(&info, k, w, forced, &[padded.clone()]);
-        let fe = enc.encode_frame(w, x);
+        let fe = enc.encode_frame(w, x, None);
         frames.push(fe.frame);
     }
     let mut dec = Decoder::new(info);

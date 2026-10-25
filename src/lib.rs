@@ -19,6 +19,7 @@ pub mod frame;
 pub mod layout;
 pub mod modes;
 pub mod parallel;
+pub mod psycho;
 pub mod quantize;
 pub mod simd;
 pub mod vendor;

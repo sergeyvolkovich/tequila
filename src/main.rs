@@ -70,7 +70,8 @@ fn usage() {
                \n\
                USAGE:\n\
                \x20 tequila encode <in.wav> <out.vqf> [--mode 44_48] [--no-ppc] [--kappa F]\n\
-               \x20                 [--threads N] [--title S] [--author S] [--comment S] [--copyright S]\n\
+               \x20                 [--threads N] [--psy [--psy-beta F] [--psy-tmn F] …]\n\
+               \x20                 [--title S] [--author S] [--comment S] [--copyright S]\n\
                \x20                 [--genre S] [--track S] … (18 тегов) [--tag CHUNK=S]\n\
                \x20 tequila decode <in.vqf> <out.wav>\n\
                \x20 tequila info <in.vqf>\n\
@@ -78,6 +79,15 @@ fn usage() {
                \n\
                Режимы: 08_08 11_08 11_10 16_16 22_20 22_24 22_32 44_40 44_48\n\
                (auto: максимальный битрейт для частоты входа)\n\
+               \n\
+               --psy — психоакустическая модель (docs/PSY.md): перцептивные веса\n\
+               \x20        ошибки квантования + адаптивный κ + pre/post-masking,\n\
+               \x20        битрейт/битстрим-формат не меняются.\n\
+               \x20        Константы: --psy-beta (0.10), --psy-bark-beta (0.1),\n\
+               \x20        --psy-lsp-beta (0 = выкл), --psy-no-gain-w (адаптивный κ\n\
+               \x20        выключить), --psy-pre-mask (20 мс), --psy-slope-up (15),\n\
+               \x20        --psy-slope-down (27), --psy-tmn (24), --psy-nmt (4),\n\
+               \x20        --psy-ath-offset (-2), --psy-post-mask (10 дБ/кадр)\n\
                \n\
                Теги (пишутся после COMM, порядок NAME,COMT,AUTH,(c),…):\n\
                \x20 --title --comment --author --copyright --arranger --band\n\
@@ -134,6 +144,50 @@ fn cmd_encode(args: &[String]) -> ExitCode {
                 opts.threads = v.parse().unwrap_or(0);
                 i += 2;
             }
+            "--psy" => {
+                // психоакустическая модель (docs/PSY.md): перцептивные
+                // веса ошибки VQ/bark, бюджет кадра не меняется
+                if opts.psy.is_none() {
+                    opts.psy = Some(Default::default());
+                }
+                i += 1;
+            }
+            "--psy-beta" | "--psy-bark-beta" | "--psy-lsp-beta" | "--psy-slope-up"
+            | "--psy-slope-down" | "--psy-tmn" | "--psy-nmt" | "--psy-ath-offset"
+            | "--psy-post-mask" | "--psy-pre-mask" => {
+                let Some(v) = args.get(i + 1) else {
+                    eprintln!("ошибка: {a} требует числовое значение");
+                    return ExitCode::from(2);
+                };
+                let val: f64 = match v.parse() {
+                    Ok(x) => x,
+                    Err(_) => {
+                        eprintln!("ошибка: {a} требует число, получено «{v}»");
+                        return ExitCode::from(2);
+                    }
+                };
+                let p = opts.psy.get_or_insert_with(Default::default);
+                match a {
+                    "--psy-beta" => p.beta = val,
+                    "--psy-bark-beta" => p.bark_beta = val,
+                    "--psy-lsp-beta" => p.lsp_beta = val,
+                    "--psy-slope-up" => p.slope_up_db = val,
+                    "--psy-slope-down" => p.slope_down_db = val,
+                    "--psy-tmn" => p.tmn_db = val,
+                    "--psy-nmt" => p.nmt_db = val,
+                    "--psy-ath-offset" => p.ath_offset_db = val,
+                    "--psy-post-mask" => p.post_mask_db = val,
+                    _ => p.pre_mask_ms = val,
+                }
+                i += 2;
+            }
+            "--psy-no-gain-w" => {
+                // абляция адаптивного κ (PSY.md §7): 0/1
+                if let Some(p) = opts.psy.as_mut() {
+                    p.gain_weighted = false;
+                }
+                i += 1;
+            }
             "--tag" => {
                 let Some(v) = args.get(i + 1) else {
                     eprintln!("ошибка: --tag требует значение CHUNK=value");
@@ -164,6 +218,13 @@ fn cmd_encode(args: &[String]) -> ExitCode {
     }
     let in_path = pos[0];
     let out_path = pos[1];
+
+    if let Some(p) = opts.psy {
+        if !(p.beta > 0.0 && p.beta <= 4.0) {
+            eprintln!("ошибка: --psy-beta должен быть в (0, 4]");
+            return ExitCode::from(2);
+        }
+    }
 
     let chans = match tequila::wav::read_wav(in_path) {
         Ok(c) => c,
