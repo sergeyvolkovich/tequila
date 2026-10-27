@@ -121,13 +121,15 @@ fn tonality(band_energy: &[f64]) -> f64 {
     if max_e <= 0.0 || n < 2.0 {
         return 0.0;
     }
-    // нормировка на max +Clip пол −120 дБ: лог всегда конечен
-    let sum_ln: f64 = band_energy
-        .iter()
-        .map(|&e| (e / max_e + 1e-12).ln())
-        .sum();
-    let am = band_energy.iter().sum::<f64>() / (max_e * n); // = 1
-    let gm = (sum_ln / n).exp() / max_e;
+    // Нормировка на max + пол −120 дБ: лог всегда конечен. SFM — отношение
+    // геометрического среднего к арифметическому, оно инвариантно к масштабу,
+    // поэтому оба средних берутся от ОДНИХ И ТЕХ ЖЕ нормированных значений.
+    // (Раньше gm дополнительно делился на max_e: при реальном масштабе
+    // мишени MDCT, e ~ 1e8…1e14, это давало sfm_db ≪ −60 и α ≡ 1 для любого
+    // сигнала, включая белый шум; тесты не ловили, т.к. брали max_e = 1.)
+    let rel: Vec<f64> = band_energy.iter().map(|&e| e / max_e + 1e-12).collect();
+    let gm = (rel.iter().map(|r| r.ln()).sum::<f64>() / n).exp();
+    let am = rel.iter().sum::<f64>() / n;
     let sfm_db = 10.0 * (gm / am).log10();
     (sfm_db / -60.0).min(1.0).max(0.0)
 }
@@ -155,7 +157,15 @@ pub struct PsyModel {
     n_slots: usize,
     /// Частота дискретизации (длительности подкадров для pre-masking).
     sr: u32,
+    /// Множитель энергии post-masking за кадр: 10^{−post_mask_db·T/46.4мс/10}.
+    /// `post_mask_db` задан на эталонный кадр 44.1 кГц/2048 (46.4 мс); в
+    /// режимах с другой длиной кадра (23–64 мс) спад масштабируется по
+    /// времени, иначе маскировка «держалась» бы на разное число миллисекунд.
+    post_decay: f64,
 }
+
+/// Длительность эталонного кадра калибровки post_mask_db, мс (2048/44100).
+const POST_MASK_REF_MS: f64 = 1000.0 * 2048.0 / 44100.0;
 
 /// Состояние post-masking на канал: порог-амплитуда на слоте после
 /// последнего закодированного кадра.
@@ -180,7 +190,10 @@ impl PsyModel {
             let b = info.mode.size / info.mode.fmode[ft.idx()].sub;
             build_bands(b, info.sr, info.norm(), &params, n_slots)
         });
-        PsyModel { params, ft, n_slots, sr: info.sr }
+        let frame_ms = 1000.0 * info.mode.size as f64 / info.sr as f64;
+        let post_db = params.post_mask_db * frame_ms / POST_MASK_REF_MS;
+        let post_decay = 10f64.powf(-post_db / 10.0);
+        PsyModel { params, ft, n_slots, sr: info.sr, post_decay }
     }
 
     pub fn n_slots(&self) -> usize {
@@ -287,7 +300,7 @@ impl PsyModel {
     pub fn mask(&self, ftype: FrameType, spec: &[f64], slots: &[f64]) -> MaskResult {
         let fb = &self.ft[ftype.idx()];
         let t = self.static_thresholds(fb, spec);
-        let decay = 10f64.powf(-self.params.post_mask_db / 10.0);
+        let decay = self.post_decay;
         let band_amp: Vec<f64> = (0..t.len())
             .map(|p| {
                 let mut te = t[p];
@@ -326,7 +339,7 @@ impl PsyModel {
         let sub = specs.len();
         let t_now: Vec<Vec<f64>> =
             specs.iter().map(|s| self.static_thresholds(fb, s)).collect();
-        let decay = 10f64.powf(-self.params.post_mask_db / 10.0);
+        let decay = self.post_decay;
 
         // post-цепочка (пишется в состояние): max(статика, prev·спад)
         let prev_amps = self.slots_to_amps(fb, &state.slots);
@@ -377,20 +390,24 @@ impl PsyModel {
             for p in 0..t_post[j].len() {
                 let mut te = t_post[j][p];
                 if !pre_src.is_empty() {
+                    // Всё считается в ЭНЕРГИИ (как post-masking): амплитуда
+                    // источника возводится в квадрат, затем умножается на
+                    // 10^{-(base+per_ms·dt)/10}. Раньше эти множители
+                    // применялись к амплитуде, а потом результат возводился
+                    // в квадрат — реальное ослабление было вдвое больше
+                    // заявленного (12 дБ + 2 дБ/мс вместо 6 + 1).
                     let mut pre = 0.0f64;
                     for (amp, src_ms) in &pre_src {
                         let dt = src_ms - j_ms;
                         if dt <= 0.0 || dt > pre_win {
                             continue;
                         }
-                        let a = amp[p] * base * 10f64.powf(-per_ms * dt / 10.0);
-                        if a > pre {
-                            pre = a;
+                        let e = amp[p] * amp[p] * base * 10f64.powf(-per_ms * dt / 10.0);
+                        if e > pre {
+                            pre = e;
                         }
                     }
-                    if pre > 0.0 {
-                        te = te.max(pre * pre);
-                    }
+                    te = te.max(pre);
                 }
                 band_amp.push(te.sqrt());
             }
@@ -453,11 +470,20 @@ fn build_bands(b: usize, sr: u32, norm: f64, params: &PsyParams, n_slots: usize)
         .collect();
 
     let fs_ref = fullscale_ref(b, norm);
+    // ATH полосы — МИНИМУМ кривой по бинам полосы (как в ISO 11172-3: порог
+    // в тишине берётся по самой чувствительной точке полосы; на краях
+    // спектра, где кривая круто растёт/падает, значение на центре полосы
+    // завышало бы порог). Уровень в дБ → АМПЛИТУДА: делитель 20, а не 10
+    // (fs_ref — амплитуда; степень 1/10 удваивала глубину ATH в дБ, и
+    // порог лежал на −200 дБ от full scale, т.е. не работал вовсе).
     let ath_amp: Vec<f64> = (0..n)
         .map(|p| {
             let (lo, hi) = (edges[p], edges[p + 1]);
-            let fc = f[lo..hi].iter().sum::<f64>() / (hi - lo) as f64;
-            fs_ref * 10f64.powf((ath_db(fc) - 96.0 + params.ath_offset_db) / 10.0)
+            let ath_min_db = f[lo..hi]
+                .iter()
+                .map(|&fb| ath_db(fb))
+                .fold(f64::INFINITY, f64::min);
+            fs_ref * 10f64.powf((ath_min_db - 96.0 + params.ath_offset_db) / 20.0)
         })
         .collect();
 
@@ -581,10 +607,69 @@ mod tests {
             let fb = &model.ft[FrameType::Long.idx()];
             assert!((amp - fb.ath_amp[p]).abs() < 1e-6 * amp.max(1.0));
         }
-        // ATH имеет минимум в районе 2–5 кГц и растёт к НЧ
+        // ATH имеет минимум в районе 2–5 кГц и растёт к НЧ. Перепад между
+        // полосой 100–200 Гц и 3 кГц по кривой Терхарда ≈ 18 дБ (амплитуда
+        // ≈ 8×); прежний порог «100×» держался только на удвоенных дБ.
         let lo = r.band_amp[band_of_freq(&model, 100.0)];
         let mid = r.band_amp[band_of_freq(&model, 3000.0)];
-        assert!(lo > 100.0 * mid, "ATH(100Гц)={lo:.3e} vs ATH(3кГц)={mid:.3e}");
+        assert!(lo > 4.0 * mid, "ATH(100Гц)={lo:.3e} vs ATH(3кГц)={mid:.3e}");
+        assert!(lo < 30.0 * mid, "ATH(100Гц)={lo:.3e} vs ATH(3кГц)={mid:.3e}");
+    }
+
+    /// ATH в абсолютных единицах: 20·lg(ath_amp/fs_ref) = ATH_dB − 96 + offset
+    /// (дБ по АМПЛИТУДЕ). Регрессия: раньше показатель был /10 вместо /20, и
+    /// ATH лежал на −205 дБ от full scale на 3 кГц вместо ≈ −103 дБ.
+    #[test]
+    fn ath_level_matches_spec() {
+        let model = model_44_mono(PsyParams::default());
+        let fb = &model.ft[FrameType::Long.idx()];
+        let fs = fullscale_ref(2048, 2.0);
+        let p = band_of_freq(&model, 3000.0);
+        let db_re_fs = 20.0 * (fb.ath_amp[p] / fs).log10();
+        let expect = ath_db(3000.0) - 96.0 + PsyParams::default().ath_offset_db;
+        // ATH полосы = минимум по бинам полосы → допуск на ширину полосы
+        assert!(
+            (db_re_fs - expect).abs() < 2.0,
+            "ATH@3кГц = {db_re_fs:.1} дБ от FS, ожидается ≈ {expect:.1}"
+        );
+        // 1 кГц тоже: ≈ −95 дБ, но никак не −189
+        let p1 = band_of_freq(&model, 1000.0);
+        let d1 = 20.0 * (fb.ath_amp[p1] / fs).log10();
+        assert!(d1 > -110.0 && d1 < -85.0, "ATH@1кГц = {d1:.1} дБ от FS");
+    }
+
+    /// Тональность не зависит от масштаба и на реальных уровнях мишени
+    /// (e ~ 1e8…1e14) шум не объявляется тоном. Регрессия: раньше gm делился
+    /// на max_e второй раз → α ≡ 1 при max_e ≫ 1 (старый тест брал max_e = 1).
+    #[test]
+    fn tonality_scale_invariant_realistic() {
+        let noise: Vec<f64> = (0..25).map(|i| 1.0 + 0.1 * ((i * 7 % 5) as f64)).collect();
+        let a0 = tonality(&noise);
+        for &k in &[1e-6, 1e3, 1e8, 1e12] {
+            let scaled: Vec<f64> = noise.iter().map(|v| v * k).collect();
+            let a = tonality(&scaled);
+            assert!((a - a0).abs() < 1e-9, "scale {k}: α={a} vs {a0}");
+        }
+        assert!(tonality(&noise.iter().map(|v| v * 1e12).collect::<Vec<_>>()) < 0.05);
+        let mut tone = vec![1e-9 * 1e12; 25];
+        tone[7] = 1e12;
+        assert!(tonality(&tone) > 0.95);
+    }
+
+    /// Спад post-masking привязан ко времени: на эталонном кадре 44.1/2048
+    /// ровно post_mask_db, в режимах с другой длиной кадра — пропорционально.
+    #[test]
+    fn post_decay_scales_with_frame_duration() {
+        let p = PsyParams::default();
+        let m44 = model_44_mono(p);
+        let db44 = -10.0 * m44.post_decay.log10();
+        assert!((db44 - p.post_mask_db).abs() < 1e-9, "44.1/2048: {db44}");
+        let info8 = StreamInfo::new(8, 8, 1).unwrap(); // кадр 512 @ 8 кГц = 64 мс
+        let m8 = PsyModel::new(&info8, p);
+        let db8 = -10.0 * m8.post_decay.log10();
+        let want = p.post_mask_db * (1000.0 * 512.0 / 8000.0) / POST_MASK_REF_MS;
+        assert!((db8 - want).abs() < 1e-9, "8k/512: {db8} vs {want}");
+        assert!(db8 > p.post_mask_db);
     }
 
     #[test]
@@ -655,9 +740,11 @@ mod tests {
 
         let mut st = mk(20.0).new_state();
         let rs = mk(20.0).mask_frame(FrameType::Short, &specs, None, &mut st);
-        // полоса тона: выше у подкадра 7 (2.9 мс до атаки), чем у 0 (23 мс)
+        // полоса ТОНА (бин 10): выше у подкадра 7 (2.9 мс до атаки), чем у 0
+        // (23 мс). Меряем в собственной полосе тона, а не в её spreading-хвосте
+        // у 3.4 кГц: хвост лежит лишь в разы выше пола ATH.
         let fb = &mk(20.0).ft[FrameType::Short.idx()];
-        let bin = (3430.0 / (44100.0 / (2.0 * b as f64))) as usize;
+        let bin = 10usize;
         let band = (0..fb.edges.len() - 1)
             .find(|&p| bin >= fb.edges[p] && bin < fb.edges[p + 1])
             .unwrap();
@@ -670,6 +757,21 @@ mod tests {
         // за окном (j=0, 23 мс до атаки) — ровно ATH
         let ath = fb.ath_amp[band];
         assert!((rs[0].band_amp[band] - ath).abs() < 1e-6 * ath);
+
+        // величина ослабления: pre-вклад подкадра 7 = порог атакующего
+        // подкадра 8 · 10^{−(base + per_ms·dt)/20} по АМПЛИТУДЕ, dt = 1 подкадр.
+        // (Регрессия: раньше множители применялись к амплитуде, и ослабление
+        // было вдвое больше: 12 дБ + 2 дБ/мс вместо 6 + 1.)
+        let pp = PsyParams::default();
+        let sub_ms = 1000.0 * b as f64 / 44100.0;
+        let want = 10f64.powf(-(pp.pre_mask_db_base + pp.pre_mask_db_per_ms * sub_ms) / 20.0);
+        let got = rs[7].band_amp[band] / rs[8].band_amp[band];
+        assert!(
+            (got / want - 1.0).abs() < 0.02,
+            "pre-masking: ослабление {:.2} дБ, ожидается {:.2} дБ",
+            -20.0 * got.log10(),
+            -20.0 * want.log10()
+        );
 
         // выключено — все тихие подкадры одинаковые
         let mut st0 = mk(0.0).new_state();
